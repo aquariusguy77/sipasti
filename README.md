@@ -1,8 +1,10 @@
-# SIPASTI — kerangka purwarupa
+# SIPASTI — purwarupa
 
-Sistem Informasi Pemantauan Alur dan Status Detensi Imigrasi. Berkas ini memuat
-inti purwarupa, yaitu bagian yang menanggung klaim artikel. Antarmuka dan CRUD
-biasa belum termasuk dan dapat Anda lanjutkan sendiri.
+Sistem Informasi Pemantauan Alur dan Status Detensi Imigrasi. Repositori ini
+memuat inti purwarupa yang menanggung klaim artikel (mesin indikator, gerbang
+status, penutupan peringatan, log audit hanya-tambah) beserta antarmuka papan
+perkara (FR7), laporan durasi tahap (FR8), pembatasan akses berdasarkan peran
+(NFR2), dan aturan retensi (NFR5).
 
 Seluruh ambang diturunkan dari **Pedoman Direktur Jenderal Imigrasi Nomor
 IMI-190.GR.03.11 Tahun 2024**, kecuali batas sepuluh tahun yang bersumber pada
@@ -10,25 +12,56 @@ Pasal 85 Undang-Undang Nomor 6 Tahun 2011.
 
 ## Cara memasang
 
-```bash
-composer create-project laravel/laravel sipasti
-cd sipasti
-```
-
-Salin isi folder ini ke dalam proyek Laravel tersebut, dengan struktur yang sama.
-Lalu jalankan:
+Membutuhkan PHP 8.3 atau lebih baru dan Composer.
 
 ```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite
 php artisan migrate:fresh --seed
-php artisan test --testsuite=Feature
+php artisan serve
 ```
 
-SQLite sudah menjadi bawaan Laravel terbaru, sehingga tidak perlu memasang server
-basis data. Pemicu log audit ditulis untuk SQLite dan MySQL.
+Buka `http://127.0.0.1:8000` lalu masuk dengan salah satu akun demonstrasi.
+Kata sandi seluruh akun adalah `password`.
 
-## Status pengujian
+| Akun | Peran | Yang dapat dilakukan |
+| --- | --- | --- |
+| `petugas@sipasti.test` | Petugas Rudenim | Papan perkara, registrasi, pindah tahap, sebab tertahan, surat perwakilan |
+| `penyelia@sipasti.test` | Penyelia | Seluruh kemampuan petugas, meninjau peringatan, mengubah status, menutup perkara, laporan |
+| `kepala@sipasti.test` | Kepala Rudenim | Papan perkara, meninjau peringatan, menutup perkara, laporan |
+| `auditor@sipasti.test` | Auditor internal | Log audit dan laporan agregat, tanpa akses ke identitas deteni |
+| `admin@sipasti.test` | Administrator | Menyunting ambang indikator dan membaca log audit, tanpa akses ke berkas perkara |
 
-49 uji, seluruhnya lulus. Diverifikasi pada PHP 8.3 dan Laravel 12.
+Matriks peran berada pada `config/sipasti.php` dan dapat diubah tanpa menyentuh kode.
+
+SQLite sudah menjadi bawaan Laravel, sehingga tidak perlu memasang server basis
+data. Pemicu log audit ditulis untuk SQLite dan MySQL.
+
+### Tanggal acuan
+
+`.env.example` menetapkan `SIPASTI_REFERENCE_DATE=2026-10-07`, sama dengan tanggal
+acuan perkara simulasi, agar papan perkara memperlihatkan keadaan tepat di sekitar
+setiap tenggat. Kosongkan nilai itu untuk memakai tanggal hari ini.
+
+### Perintah terjadwal
+
+```bash
+php artisan sipasti:evaluate --as-of=2026-10-07   # mesin indikator, terjadwal setiap hari 06.00
+php artisan sipasti:retention --dry-run           # calon anonimisasi, tanpa mengubah data
+php artisan sipasti:retention                     # aturan retensi, terjadwal setiap tanggal 1
+php artisan schedule:work                         # menjalankan penjadwal secara lokal
+```
+
+## Pengujian
+
+```bash
+php artisan test
+```
+
+95 uji, seluruhnya lulus. Diverifikasi pada PHP 8.3 dan Laravel 13. Uji inti dari
+kerangka awal (48 uji) tetap tidak diubah.
 
 ## Peta berkas ke bagian artikel
 
@@ -47,6 +80,20 @@ basis data. Pemicu log audit ditulis untuk SQLite dan MySQL.
 | `tests/Feature/IndicatorBoundaryTest.php` | 4.5, pengujian batas |
 | `tests/Feature/StatusGateTest.php` | 4.5, pengujian gerbang status |
 | `tests/Feature/AccountabilityTest.php` | 4.5, FR10 dan NFR3 |
+| `app/Http/Controllers/BoardController.php`, `resources/views/board.blade.php` | FR7, papan perkara |
+| `app/Http/Controllers/CaseController.php`, `resources/views/cases/*` | FR7, berkas perkara dan aksinya |
+| `app/Services/StageTracker.php` | 4.3.1, perpindahan tahap sebagai peristiwa, dijaga gerbang status |
+| `app/Services/CaseRegistry.php`, `app/Services/CaseCloser.php` | registrasi, pembaruan, dan penutupan perkara |
+| `app/Services/StageDurationReport.php` | FR8, laporan durasi tahap dan sebab tertahan |
+| `app/Services/RetentionPolicy.php` | NFR5, anonimisasi identitas setelah jangka retensi |
+| `config/sipasti.php`, `app/Providers/AppServiceProvider.php` | NFR2, matriks peran dan Gate |
+| `app/Http/Controllers/IndicatorController.php` | 4.3.1, penyuntingan ambang melalui antarmuka |
+| `database/seeders/HistoricalCaseSeeder.php` | perkara tertutup untuk demonstrasi FR8 dan NFR5 |
+| `tests/Feature/CaseBoardTest.php` | FR7, termasuk gerbang status yang tidak dapat dilewati dari layar |
+| `tests/Feature/StageDurationReportTest.php` | FR8 |
+| `tests/Feature/RoleAccessTest.php` | NFR2 |
+| `tests/Feature/RetentionPolicyTest.php` | NFR5, pola tiga hari di sekitar batas retensi |
+| `tests/Feature/IndicatorManagementTest.php` | 4.3.1, ambang sebagai data |
 
 ## Tiga keputusan desain yang menanggung klaim artikel
 
@@ -79,12 +126,48 @@ Temuan ini layak dilaporkan pada subbagian 4.5, karena memperlihatkan bahwa
 pengamanan berbasis status perlu melingkupi seluruh jalur pemulangan, tidak hanya
 tindakan deportasi itu sendiri.
 
-## Yang belum termasuk
+## Keputusan desain pada bagian yang dilanjutkan
 
-Antarmuka papan perkara (FR7), laporan durasi tahap (FR8), pembatasan akses
-berdasarkan peran (NFR2), dan aturan retensi (NFR5) belum dibangun. Keempatnya
-merupakan pekerjaan antarmuka dan konfigurasi yang dapat Anda lanjutkan dengan
-scaffolding Laravel biasa.
+**Antarmuka tidak membuka jalan pintas.** Pengendali hanya meneruskan masukan ke
+lapis layanan. Pindah ke tahap 7 dan 8, melampirkan keputusan deportasi, mencatat
+surat kepada perwakilan negara, dan menutup perkara karena deportasi seluruhnya
+memanggil `StatusGate`. Formulir status dan peninjauan sengaja tidak memvalidasi
+kelengkapan rujukan atau alasan, agar penolakan terjadi di gerbang dan tercatat
+pada log audit. `CaseBoardTest` menguji setiap jalur ini melalui HTTP.
+
+**Papan perkara tidak memuat identitas.** Kartu dan daftar peringatan hanya
+menampilkan nomor perkara, tahap, lama detensi, status hukum, dan peringatan.
+Nama dan kebangsaan hanya tampak di berkas perkara, yang pembukaannya dicatat.
+Ini melanjutkan pagar pemrofilan pada model data ke lapisan tampilan.
+
+**Perkara tidak dapat ditutup selama peringatannya terbuka.** Tanpa aturan ini,
+menutup perkara menjadi jalan pintas untuk menghilangkan peringatan yang belum
+ditinjau, dan kewajiban FR10 kehilangan maknanya.
+
+**Perlu-tahu pada pembatasan akses.** Auditor membaca log audit dan laporan
+agregat tetapi tidak membaca identitas deteni. Admin menyunting ambang tetapi tidak
+membaca berkas perkara. Setiap akses yang ditolak dicatat sebagai `access.denied`.
+
+**Retensi menganonimkan, bukan menghapus.** Yang dihapus hanya medan identitas.
+Data perkara dipertahankan agar laporan durasi tahap tetap dapat dihitung, dan
+log audit tidak disentuh. Satu perkara yang masih terbuka atau baru ditutup cukup
+untuk menahan anonimisasi seorang deteni.
+
+**Log audit mencatat nama medan, bukan nilainya.** Pembaruan nomor dokumen
+perjalanan tercatat sebagai `medan=deteni.travel_document_no`, sehingga log audit
+tidak menjadi salinan kedua data pribadi.
+
+## Hal yang perlu diselaraskan dengan artikel
+
+Tiga hal berikut merupakan usulan desain dalam purwarupa dan perlu dicocokkan
+dengan naskah sebelum dilaporkan.
+
+1. **Label delapan tahap** pada `config/sipasti.php` disusun dari perilaku kode
+   (tahap 1 sampai 3 sebelum Rudenim, tahap 7 dan 8 jalur deportasi). Sesuaikan
+   dengan rekonstruksi alur pada subbagian 4.1.
+2. **Jangka retensi lima tahun** bukan turunan normatif. Selaraskan dengan jadwal
+   retensi arsip instansi melalui `SIPASTI_RETENTION_YEARS`.
+3. **Daftar alasan penutupan perkara** (`closure_reasons`) bersifat usulan.
 
 Seluruh data bersifat bentukan. Purwarupa ini tidak dirancang untuk memproses
 data pribadi deteni yang sebenarnya.
