@@ -54,6 +54,24 @@ php artisan sipasti:retention                     # aturan retensi, terjadwal se
 php artisan schedule:work                         # menjalankan penjadwal secara lokal
 ```
 
+## Deploy ke Vercel (demonstrasi)
+
+Vercel tidak menjalankan PHP secara bawaan. Repositori ini memakai runtime
+komunitas `vercel-php` melalui `vercel.json` dan titik masuk `api/index.php`.
+
+1. Impor repositori di Vercel. `vercel.json` sudah menonaktifkan deteksi
+   kerangka Vite, jadi pengaturan Build dan Output tidak perlu diubah.
+2. Tambahkan satu variabel lingkungan di **Settings → Environment Variables**:
+   `APP_KEY`, berisi keluaran `php artisan key:generate --show`.
+3. Deploy ulang.
+
+Batasan yang perlu dipahami: Vercel hanya mengizinkan penulisan ke `/tmp`, jadi
+basis data SQLite disusun ulang dari data simulasi setiap kali fungsi dimulai
+dingin. Perubahan (registrasi perkara, peninjauan, dan sebagainya) bersifat
+sementara dan tidak dibagi antar instans fungsi. Ini cukup untuk memperagakan
+alur purwarupa, tetapi tidak untuk pemakaian berkelanjutan. Untuk itu gunakan
+hosting PHP dengan basis data tetap, misalnya Laravel Cloud, Railway, atau VPS.
+
 ## Pengujian
 
 ```bash
